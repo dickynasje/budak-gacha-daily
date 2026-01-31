@@ -130,8 +130,6 @@ async function runArknightsEndfield(cred, cookie, role) {
   const json = await res.json()
   const code = Number(json.code)
 
-  log('debug', 'akef', 'Response', json)
-
   const successCodes = {
     0: 'Successfully checked in!',
     10001: 'Already checked in for today',
