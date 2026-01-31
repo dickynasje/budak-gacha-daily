@@ -128,18 +128,27 @@ async function runArknightsEndfield(cred, cookie, role) {
 
   const res = await fetch(AK_ENDPOINT, { method: 'POST', headers })
   const json = await res.json()
+  const code = Number(json.code)
 
   log('debug', 'akef', 'Response', json)
 
-  // Handle response based on actual API response structure
-  if (json.code === 0 || json.code === '0') {
-    log('info', 'akef', 'Successfully checked in!')
-  } else if (json.msg && json.msg.includes('signed')) {
-    log('info', 'akef', 'Already checked in for today')
-  } else if (json.code === -1 || json.code === '-1') {
-    log('error', 'akef', `Error: ${json.msg || 'Authentication failed. Check your credentials'}`)
+  const successCodes = {
+    0: 'Successfully checked in!',
+    10001: 'Already checked in for today',
+  }
+
+  if (code in successCodes) {
+    log('info', 'akef', successCodes[code])
+    return
+  }
+
+  // Handle errors
+  const message = json.message || json.msg || 'Undocumented error, report to Issues page if this persists'
+
+  if (code === -1 || code === 401) {
+    log('error', 'akef', `Error not logged in. Check your AK_CREDS, AK_COOKIES, and AK_ROLES`)
   } else {
-    log('error', 'akef', `Error: ${json.msg || 'Undocumented error, report to Issues page if this persists'}`)
+    log('error', 'akef', `Error: ${message}`)
   }
 }
 
