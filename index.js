@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 
+const crypto = require('crypto')
+
 const cookies = process.env.COOKIE?.split('\n').map(s => s.trim()) || []
 const games = process.env.GAMES?.split('\n').map(s => s.trim()) || []
 const akCreds = process.env.AK_CREDS?.split('\n').map(s => s.trim()) || []
 const akCookies = process.env.AK_COOKIES?.split('\n').map(s => s.trim()) || []
 const akRoles = process.env.AK_ROLES?.split('\n').map(s => s.trim()) || []
+const akPlatform = process.env.AK_PLATFORM || '3'
+const akVName = process.env.AK_VNAME || '1.0.0'
 const discordWebhook = process.env.DISCORD_WEBHOOK
 const discordUser = process.env.DISCORD_USER
 
@@ -104,8 +108,63 @@ async function runHoyoGames(cookie, games) {
   }
 }
 
+function bytesToHex(bytes) {
+  return Array.from(bytes, byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('')
+}
+
+function generateSign(path, body, timestamp, token, platform, vName) {
+  let str = path + body + timestamp
+  const headerJson = `{"platform":"${platform}","timestamp":"${timestamp}","dId":"","vName":"${vName}"}`
+  str += headerJson
+
+  const hmac = crypto.createHmac('sha256', token || '')
+  hmac.update(str)
+  const hmacHex = hmac.digest('hex')
+
+  const md5 = crypto.createHash('md5')
+  md5.update(hmacHex)
+  return md5.digest('hex')
+}
+
+async function refreshToken(cred, platform, vName) {
+  const refreshUrl = 'https://zonai.skport.com/web/v1/auth/refresh'
+
+  const headers = new Headers({
+    'accept': 'application/json, text/plain, */*',
+    'cred': cred,
+    'platform': platform,
+    'vName': vName,
+    'origin': 'https://game.skport.com',
+    'referer': 'https://game.skport.com/',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0'
+  })
+
+  const res = await fetch(refreshUrl, { method: 'GET', headers })
+  const json = await res.json()
+
+  if (json.code === 0 && json.data && json.data.token) {
+    return json.data.token
+  } else {
+    throw new Error(`Refresh Failed (Code: ${json.code}, Msg: ${json.message})`) 
+  }
+}
+
 async function runArknightsEndfield(cred, cookie, role) {
   log('debug', '\n----- CHECKING IN FOR ARKNIGHTS ENDFIELD -----')
+
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+
+  // Refresh token for signing
+  let token = ''
+  try {
+    token = await refreshToken(cred, akPlatform, akVName)
+    log('debug', 'akef', 'Token refreshed successfully')
+  } catch (e) {
+    log('error', 'akef', `Token refresh failed: ${e.message}`)
+    // proceed with empty token; API may reject if token required
+  }
+
+  const sign = generateSign('/web/v1/game/endfield/attendance', '', timestamp, token, akPlatform, akVName)
 
   const headers = new Headers({
     'accept': '*/*',
@@ -118,12 +177,15 @@ async function runArknightsEndfield(cred, cookie, role) {
     'sk-language': 'en',
     'sk-game-role': role,
     'cred': cred,
-    'cookie': cookie,
+    'platform': akPlatform,
+    'vName': akVName,
+    'timestamp': timestamp,
+    'sign': sign,
     'sec-gpc': '1',
     'sec-fetch-dest': 'empty',
     'sec-fetch-mode': 'cors',
     'sec-fetch-site': 'same-site',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:146.0) Gecko/20100101 Firefox/146.0'
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0'
   })
 
   const res = await fetch(AK_ENDPOINT, { method: 'POST', headers })
@@ -144,7 +206,7 @@ async function runArknightsEndfield(cred, cookie, role) {
   const message = json.message || json.msg || 'Undocumented error, report to Issues page if this persists'
 
   if (code === -1 || code === 401) {
-    log('error', 'akef', `Error not logged in. Check your AK_CREDS, AK_COOKIES, and AK_ROLES`)
+    log('error', 'akef', `Error not logged in. Check your AK_CREDS and AK_ROLES`)
   } else {
     log('error', 'akef', `Error: ${message}`)
   }
