@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const crypto = require('crypto')
+import crypto from 'crypto'
 
 const cookies = process.env.COOKIE?.split('\n').map(s => s.trim()) || []
 const games = process.env.GAMES?.split('\n').map(s => s.trim()) || []
@@ -145,7 +145,7 @@ async function refreshToken(cred, platform, vName) {
   if (json.code === 0 && json.data && json.data.token) {
     return json.data.token
   } else {
-    throw new Error(`Refresh Failed (Code: ${json.code}, Msg: ${json.message})`) 
+    throw new Error(`Refresh Failed (Code: ${json.code}, Msg: ${json.message})`)
   }
 }
 
